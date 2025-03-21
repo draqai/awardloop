@@ -27,28 +27,44 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
     
-    # Initialize extensions with app
-    mongo.init_app(app)
+    # Try to use direct MongoDB connection first with timeout parameters
+    global db
+    try:
+        # Get MongoDB URI from config
+        mongo_uri = app.config.get('MONGO_URI')
+        if mongo_uri:
+            # Create MongoDB client with shorter timeouts
+            client = pymongo.MongoClient(
+                mongo_uri,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=5000,
+                socketTimeoutMS=5000
+            )
+            
+            # Extract database name from URI or use default
+            if '/' in mongo_uri:
+                db_name = mongo_uri.split('/')[-1].split('?')[0]
+            else:
+                db_name = 'awardloop_app'
+                
+            # Connect to the database
+            db = client[db_name]
+            
+            # Test connection with lightweight command
+            db.command('ping')
+            app.logger.info(f"MongoDB connected directly to {db_name}")
+    except Exception as e:
+        app.logger.error(f"Direct MongoDB connection failed: {str(e)}")
+        app.logger.info("Falling back to PyMongo extension")
+        
+        # Fall back to Flask-PyMongo if direct connection fails
+        mongo.init_app(app)
+        db = mongo.db
+
+    # Initialize other extensions
     socketio.init_app(app, cors_allowed_origins="*")
     jwt.init_app(app) 
     CORS(app, resources={r"/api/*": {"origins": "*"}})
-    
-    # Set up global MongoDB db reference
-    global db
-    db = mongo.db
-    
-    # For direct MongoDB connection (alternative method if needed)
-    # Only try this if db is not already set
-    if db is None:
-        try:
-            mongo_uri = app.config.get('MONGO_URI')
-            if mongo_uri:
-                client = pymongo.MongoClient(mongo_uri)
-                db_name = mongo_uri.split('/')[-1]
-                db = client[db_name]
-                app.logger.info(f"MongoDB connected using direct connection to {db_name}")
-        except Exception as e:
-            app.logger.error(f"Error establishing direct MongoDB connection: {str(e)}")
     
     # Register blueprints
     from app.api.auth import auth_bp

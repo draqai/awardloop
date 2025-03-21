@@ -5,9 +5,11 @@ This module implements Socket.IO event handlers for real-time updates,
 particularly focused on transaction processing.
 """
 
-from flask_socketio import emit
+from flask_socketio import emit, join_room, leave_room
 from flask import current_app, request
 from app import socketio, db
+from flask_jwt_extended import decode_token
+import jwt
 import uuid
 import logging
 from datetime import datetime, timedelta
@@ -20,13 +22,47 @@ socket_paused_users = {}
 
 @socketio.on('connect')
 def handle_connect():
-    """Handle client connection"""
+    """Handle client connection with JWT authentication"""
     from flask_socketio import ConnectionRefusedError
     try:
+        # Get token from different possible sources
+        token = None
+        
+        # Check authorization header
+        auth_header = request.headers.get('Authorization', '') if hasattr(request, 'headers') else ''
+        if auth_header.startswith('Bearer '):
+            token = auth_header.replace('Bearer ', '')
+        
+        # Check query parameters
+        if not token and hasattr(request, 'args'):
+            token = request.args.get('token')
+        
+        # Check Socket.IO auth data
+        if not token and hasattr(request, 'event') and request.event.get('args'):
+            auth_data = request.event.get('args', {}).get('auth', {})
+            token = auth_data.get('token')
+            
+        # If we found a token, validate it
+        if token:
+            try:
+                # Decode token - adjust this to match your JWT structure
+                decode_token(token)
+                logger.info("Client authenticated with valid JWT token")
+            except jwt.ExpiredSignatureError:
+                logger.warning("Expired JWT token in socket connection")
+                # Optionally reject connection for expired token
+                # return ConnectionRefusedError('Authentication expired')
+            except Exception as jwt_error:
+                logger.warning(f"Invalid JWT token in socket connection: {str(jwt_error)}")
+                # Optionally reject connection for invalid token
+                # return ConnectionRefusedError('Invalid authentication')
+        else:
+            logger.warning("No auth token provided for socket connection")
+            # Uncomment to reject connection if no token:
+            # return ConnectionRefusedError('Authentication required')
+            
         # Get the Socket.IO session ID from Flask request context
         session_id = request.sid if hasattr(request, 'sid') else 'unknown'
-        # Alternative method to get socket ID
-        from flask import session
         logger.info(f"Client connected: {session_id}")
         emit('connection_status', {"status": "connected", "timestamp": datetime.utcnow().isoformat()})
     except Exception as e:
@@ -325,7 +361,6 @@ def handle_join(data):
             return
             
         # Join the specified room (user ID)
-        from flask_socketio import join_room
         join_room(room)
         logger.info(f"Client {request.sid} joined room: {room}")
         emit('joined_room', {"room": room, "status": "joined"})

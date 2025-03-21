@@ -7,8 +7,12 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     
     # MongoDB configuration
-    MONGO_URI = os.environ.get('MONGO_URI') or 'mongodb+srv://awardloop_user:8KESTazumOtvEgK2@awardloop.lcuzs.mongodb.net/awardloop'
+
+    MONGO_URI = os.environ.get('MONGO_URI')
     
+    # Legacy MySQL settings (kept for reference)
+    # SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'mysql+pymysql://root:@localhost/awardloop_app'
+    # SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # JWT settings
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or 'jwt-secret-key-change-in-production'
